@@ -2,13 +2,13 @@
 
 ### Features
 
-- [] `Backend`
-    - [] Winit
-    - [] Udev
-- [] `Window Polishing`
-- [] `Abstractions over Wayland Stack`
-- [] `Integration with GUI-Shell components`
-- [] `API`
+- [ ] `Backend`
+    - [ ] Winit
+    - [ ] Udev
+- [ ] `Window Polishing`
+- [ ] `Abstractions over Wayland Stack`
+- [ ] `Integration with GUI-Shell components`
+- [ ] `API`
 
 
 

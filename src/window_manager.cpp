@@ -1,63 +1,120 @@
-#include <QApplication>
-#include <QMainWindow>
-#include <QMenu>
-#include <QToolBar>
-#include <QStatusBar>
-#include <QVBoxLayout>
-#include <QFileSystemModel>
-#include <QListView>
-#include <QKeyEvent>
-#include <QDebug>
+#include <QtCompositor/QWaylandCompositor>
+#include <QtCompositor/QWaylandSurface>
+#include <QtCompositor/QWaylandShellSurface>
+#include <QtCompositor/QWaylandInputDevice>
+#include <QtCompositor/QWaylandXdgShellV5>
+#include <QtGui/QMouseEvent>
+#include <QtGui/QKeyEvent>
 
-class CustomWindowManager : public QMainWindow
+class MyCompositor : public QWaylandCompositor
 {
-    Q_OBJECT
-
 public:
-    CustomWindowManager(QWidget *parent = nullptr);
-
-protected:
-    bool event(QEvent *event) override;
-};
-
-CustomWindowManager::CustomWindowManager(QWidget *parent)
-    : QMainWindow(parent)
-{
-    // Set up the main window
-    QMainWindow *mainWindow = new QMainWindow(this);
-    mainWindow->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    mainWindow->setAttribute(Qt::WA_TranslucentBackground);
-    mainWindow->setStyleSheet("QMainWindow { background-color: transparent; }");
-
-    // Show the main window
-    mainWindow->showFullScreen();
-}
-
-bool CustomWindowManager::event(QEvent *event)
-{
-    // Handle key events
-    if (event->type() == QEvent::KeyPress)
+    MyCompositor(QWindow *window)
+        : QWaylandCompositor(window)
     {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Escape)
-        {
-            qDebug() << "Escape key pressed. Closing application.";
-            // Close the application
-            QApplication::quit();
-            return true;
-        }
+        // Create the input device
+        m_inputDevice = new QWaylandInputDevice(this);
+
+        // Connect signals for input events
+        connect(m_inputDevice, &QWaylandInputDevice::mousePressEvent, this, &MyCompositor::handleMousePressEvent);
+        connect(m_inputDevice, &QWaylandInputDevice::mouseMoveEvent, this, &MyCompositor::handleMouseMoveEvent);
+        connect(m_inputDevice, &QWaylandInputDevice::mouseReleaseEvent, this, &MyCompositor::handleMouseReleaseEvent);
+        connect(m_inputDevice, &QWaylandInputDevice::keyPressEvent, this, &MyCompositor::handleKeyPressEvent);
+        connect(m_inputDevice, &QWaylandInputDevice::keyReleaseEvent, this, &MyCompositor::handleKeyReleaseEvent);
+
+        // Create the xdg shell
+        m_xdgShell = new QWaylandXdgShellV5(this);
+
+        // Connect signals for xdg shell events
+        connect(m_xdgShell, &QWaylandXdgShellV5::surfaceCreated, this, &MyCompositor::handleXdgSurfaceCreated);
     }
 
-    // Call the base class implementation to handle other events
-    return QMainWindow::event(event);
-}
+protected:
+    QWaylandSurface *createSurface(wl_client *client, uint32_t id) override
+    {
+        Q_UNUSED(client);
+        Q_UNUSED(id);
 
-int main(int argc, char *argv[])
-{
-    QApplication app(argc, argv);
+        // Create a new surface
+        QWaylandSurface *surface = new QWaylandSurface(this);
 
-    CustomWindowManager mainWindow;
-    mainWindow.show();
+        // Return the new surface
+        return surface;
+    }
 
-    return app.exec();
-}
+    QWaylandShellSurface *createShellSurface(QWaylandSurface *surface) override
+    {
+        // Create a new shell surface for the given surface
+        QWaylandShellSurface *shellSurface = new QWaylandShellSurface(surface);
+
+        // Return the new shell surface
+        return shellSurface;
+    }
+
+    QWaylandShellSurface *createXdgShellSurface(QWaylandSurface *surface) override
+    {
+        // Create a new xdg shell surface for the given surface
+        QWaylandShellSurface *shellSurface = new QWaylandShellSurface(surface);
+
+        // Return the new shell surface
+        return shellSurface;
+    }
+
+private:
+    QWaylandInputDevice *m_inputDevice;
+    QWaylandXdgShellV5 *m_xdgShell;
+    QMap<QWaylandSurface*, QPoint> m_positions;
+    QMap<QWaylandSurface*, QPoint> m_dragStarts;
+
+    void handleMousePressEvent(QWaylandInputDevice *device, uint32_t time, Qt::MouseButton button, const QPointF &localPos)
+    {
+        Q_UNUSED(time);
+
+        // Find the topmost surface at the given position
+        QWaylandSurface *surface = surfaceAt(localPos.toPoint());
+
+        // If no surface was found, return
+        if (!surface)
+            return;
+
+        // Save the drag start position
+        m_dragStarts.insert(surface, localPos.toPoint());
+
+        // Send the focus event to the surface
+        surface->sendMousePressEvent(device, button, localPos.toPoint());
+    }
+
+    void handleMouseMoveEvent(QWaylandInputDevice *device, uint32_t time, const QPointF &localPos)
+    {
+        Q_UNUSED(time);
+
+        // Find the topmost surface at the given position
+        QWaylandSurface *surface = surfaceAt(localPos.toPoint());
+
+        // If no surface was found, return
+        if (!surface)
+            return;
+
+        // Calculate the drag delta
+        QPoint delta = localPos.toPoint() - m_dragStarts.value(surface);
+
+        // Move the surface by the drag delta
+        QPoint position = m_positions.value(surface) + delta;
+        m_positions.insert(surface, position);
+
+        // Send the motion event to the surface
+        surface->sendMouseMoveEvent(device, localPos.toPoint());
+    }
+
+    void handleMouseReleaseEvent(QWaylandInputDevice *device, uint32_t time, Qt::MouseButton button, const QPointF &localPos)
+    {
+        Q_UNUSED(time);
+
+        // Find the topmost surface at the given position
+        QWaylandSurface *surface = surfaceAt(localPos.toPoint());
+
+        // If no surface was found, return
+        if (!surface)
+            return;
+
+        //```
